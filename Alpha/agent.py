@@ -10,11 +10,16 @@ import numpy as np
 
 class ReplayBuffer(object):
     def __init__(self, max_size, input_shape, n_actions, discrete=False):
+
+        new_input_shape0 = input_shape[0]
+        new_input_shape1 = input_shape[1]
+        new_input_shape2 = input_shape[2]
+
         self.mem_size = max_size
         self.mem_cntr = 0 #mem counter 
         self.discrete = discrete
-        self.state_memory = np.zeros((self.mem_size, input_shape)) # I think this is the previous step memory
-        self.new_state_memory = np.zeros((self.mem_size, input_shape)) #And this is the memory of the most recent step 
+        self.state_memory = np.zeros((self.mem_size, new_input_shape0, new_input_shape1, new_input_shape2)) # I think this is the previous step memory
+        self.new_state_memory = np.zeros((self.mem_size, new_input_shape0, new_input_shape1, new_input_shape2)) #And this is the memory of the most recent step 
         dtype = np.int8 if self.discrete else np.float32
         self.action_memory = np.zeros((self.mem_size, n_actions), dtype=dtype)
         self.reward_memory = np.zeros(self.mem_size)
@@ -22,16 +27,19 @@ class ReplayBuffer(object):
 
     def store_transition(self, state, action, reward, state_, done):
         index = self.mem_cntr % self.mem_size
+        self.state_memory[index] = state
         self.new_state_memory[index] = state_
-        self.reward_memory[index] = reward
-        self.terminal_memory[index] = 1-int(done)
+        # store one hot encoding of actions, if appropriate
         if self.discrete:
             actions = np.zeros(self.action_memory.shape[1])
             actions[action] = 1.0
             self.action_memory[index] = actions
         else:
             self.action_memory[index] = action
+        self.reward_memory[index] = reward
+        self.terminal_memory[index] = 1 - done
         self.mem_cntr += 1
+
     def sample_buffer(self, batch_size):
         max_mem = min(self.mem_cntr, self.mem_size)
         batch = np.random.choice(max_mem, batch_size)
@@ -47,15 +55,15 @@ class ReplayBuffer(object):
 def build_dqn(lr, n_actions, input_dims, fc1_dims, fc2_dims):
     model = Sequential([
         # Instead  of input_dims we will set the shape as [84,84]
-        # Input(fc1_dims, input_shape=(input_dims,  )),
+        Input( shape=input_dims),
 
         # Let's temporarily set the shape to None
-        Input(input_shape=([200, 300, 4]  )),
+        # Input(fc1_dims),
         # Input( shape=None,input_shape=(input_dims  )),
         # The filter is the number of neurons in the first conv layer
-        Conv2D(filter=128),
-        Conv2D(filter=256),
-        Conv2D(filter=512),
+        Conv2D(filters=128 , activation="relu", kernel_size=(5,5)),
+        Conv2D(filters=256, activation="relu", kernel_size=(5,5)),
+        Conv2D(filters=512, activation="relu", kernel_size=(5,5)),
         # If there will be errors persisting, relu activation will be added
         # Conv2D('relu', filter=128),
 
@@ -81,7 +89,7 @@ class Agent(object):
 
         self.memory = ReplayBuffer(mem_size, input_dims, n_actions, discrete=True)
         self.q_eval = build_dqn(alpha, n_actions, input_dims, 84,84)
-    def remember(self, state, action, reward, new_state, done):
+    def remember(self, state, action, reward, new_state,done ):
         self.memory.store_transition(state,action,reward,new_state,done)
     def choose_action(self,state):
         state = state[np.newaxis, :]
@@ -95,27 +103,28 @@ class Agent(object):
         # Since here I am quite sleepy so i might not make the best code choices ! TODO Review the code
 
     def learn(self):
-        if self.memory.mem_cntr < self.batch_size:
-            return 
-        state, action, reward, new_state, done = self.memory.sample_buffer(self.batch_size)
+        if self.memory.mem_cntr > self.batch_size:
+            state, action, reward, new_state, done = \
+                                          self.memory.sample_buffer(self.batch_size)
 
-        action_values = np.array(self.action_space, dtype=np.int8)
-        action_indices = np.dot(action, action_values)
-        
-        q_eval = self.q_eval.predict(state)
-        
-        q_next = self.q_eval.predict(new_state)
-        
-        q_target = q_eval.copy()
-        
-        batch_index = np.arange(self.batch_size, dtype=np.int32)
-        
-        q_target[batch_index, action_indices] = reward + \
-                        self.gamma*np.max(q_next, axis=1 )*done
-        _ = self.q_eval.fit(state, q_target, verbose=0)
-    
-        self.epsilon = self.epsilon * self.epsilon_dec if self.epsilon > \
-                        self.epsilon_min else self.epsilon_min
+            # action_values = np.array(self.action_space, dtype=np.int8)
+            # action_indices = np.dot(action, action_values)
+
+            q_eval = self.q_eval.predict(state)
+
+            q_next = self.q_eval.predict(new_state)
+
+            # q_target = q_eval.copy()
+
+            # batch_index = np.arange(self.batch_size, dtype=np.int32)
+
+            # q_target[batch_index, action_indices] = reward + \
+            #                     self.gamma*np.max(q_next, axis=1)*done
+
+            # _ = self.q_eval.fit(state, q_target, verbose=0)
+
+            # self.epsilon = self.epsilon*self.epsilon_dec if self.epsilon > \
+            #                self.epsilon_min else self.epsilon_min
 
     def save_model(self):
         self.q_eval.save(self.model_file)
