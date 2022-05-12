@@ -16,10 +16,14 @@ class CandleStickEnv(Env):
         # This is the action that is currently held
         self.state = 0
         self.day= 1
-        self.previous_price = 0
+        
         self.current_stock = 'ASIANPAINT'
 
         self.profit = 0
+        self.purchase_price = 0
+        self.action_taken_before = 0
+
+        self.multiplier = 1
 
     def step(self, action):
 
@@ -32,57 +36,78 @@ class CandleStickEnv(Env):
         # We will return info as well
         # if action == 0:
 
-        # if(action == 0 and self.state == 0):
-        #     return 0
-
-        # answer = action + "BOY"
-        # return(answer)
-
-
-        # img = mpimg.imread('images/TrainingDS/1,3216.3,ASIANPAINT.png')
         path_str = f"images/TrainingDS/{self.day},*"
         img_path = glob.glob(path_str)
         img = mpimg.imread(img_path[0])
 
-        path_str_2 = f"images/TrainingDS/{self.day+1},*"
-        img_path_2 = glob.glob(path_str_2)
-        array_splt_2 = img_path_2[0].split(",")
+        
 
         array_splt = img_path[0].split(",")
-        
 
-        next_stock = (array_splt_2[2].split("."))[0]
-        current_price = float(array_splt[1]) 
+        current_price = float(array_splt[1])  
 
 
-        if(next_stock != self.current_stock or self.day == 1):
+        multiplier_reset = False
+        done = False
+        if(self.day == 1):
             # return  profit and everythng as zero except of the observation
             reward = 0
-            info  = f"The EQUITY is changing to: {next_stock}"
-            self.current_stock = next_stock
+            info  = f"The EQUITY is changing to: {self.current_stock}"
+            self.current_stock = self.current_stock
         else:
-            past_price = self.previous_price
-            # next_price = float(array_splt_2[1])
-            if(action == 0):
-                reward = 0
-                info  = "No action was taken"
+            if(action == 0 ):
+                if(self.action_taken_before == 0):
+                    reward = 0
+                    info  = "No action was taken"
+                else:
+                    reward = 0
+                    info  = f"The stock is HELD with action: {self.action_taken_before}"
             elif(action == 1):
-                reward = current_price - past_price
-                info  = f"The stock was BOUGHT, profit:{round(reward,2)}"
+                if(self.action_taken_before == 0):
+                    reward = 0
+                    info  = f"The stock was BOUGHT at price: {round(current_price)}"
+                    self.purchase_price = current_price
+                    self.action_taken_before = 1
+                elif(self.action_taken_before == 1):
+                    reward = 0
+                    info  = f"The stock is BOUGHT AGAIN"
+                    self.multiplier = self.multiplier + 1
+                elif(self.action_taken_before == 2): #Meaning the stock was sold before and now the trade is exitted
+                    reward = self.purchase_price - current_price
+                    info = f"The trade EXITS (short) at {round(current_price)} profit: {round(reward * self.multiplier,2)}"
+                    multiplier_reset = True
+                    done = True
+                    self.action_taken_before = 0
             elif(action == 2):
-                reward = past_price - current_price
-                info  = f"The stock was SOLD, profit:{round(reward,2)}"
-            else:
-                reward = 0
-                info  = "An ERROR OCCURED"
+                if(self.action_taken_before == 0):
+                    reward = 0
+                    info  = f"The stock was SOLD at price: {round(current_price)}"
+                    self.purchase_price = current_price
+                    self.action_taken_before = 2
+                elif(self.action_taken_before == 1): #Meaning the stock was sold before and now the trade is exitted
+                    reward = current_price - self.purchase_price
+                    info = f"The trade EXITS (Long) at {round(current_price)} profit: {round(reward * self.multiplier,2)}"
+                    multiplier_reset = True
+                    done = True
+                    self.action_taken_before = 0
+                elif(self.action_taken_before == 2): 
+                    reward = 0
+                    info  = f"The stock is SOLD AGAIN"
+                    self.multiplier = self.multiplier + 1
+
+
+
         
-        self.profit = self.profit + reward
+        self.profit = self.profit + reward*self.multiplier
         info = f"{info} ----- Total Revenue: {round(self.profit, 2)}"
     
         self.day = self.day +1
-        self.previous_price = current_price
+        # self.purchase_price = current_price
+        reward = reward*self.multiplier
 
-        return img,reward, info
+        if(multiplier_reset == True):
+            self.multiplier = 1
+        return img,reward,done, info
 
 
     def reset(self):
