@@ -10,3 +10,5 @@ The candle stick images for this programme have been generated using the code fr
 The code author is Antoni Skup
 
 Contact: skupantoni920@gmail.com
+
+5th of May 2022
